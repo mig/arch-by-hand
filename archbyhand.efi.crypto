@@ -148,17 +148,15 @@ sgdisk -c 3:"LUKS" /dev/sda
 cryptsetup --cipher=aes-xts-plain --verify-passphrase --key-size=512 luksFormat /dev/sda3
 cryptsetup luksOpen /dev/sda3 root
 
-# encrypted swap (random passphrase on boot)
-# echo swapmapper /dev/sda2 SWAP "-c aes-xts-plain -h whirlpool -s 512" >> /mnt/etc/crypttab
-
 # NOTE: make sure to add dm_crypt and aes_i586 to MODULES in rc.conf
 # NOTE2: actually this isn't required since we're mounting an encrypted root and grub2/initramfs handles this before we even get to rc.conf
 
 # make filesystems
 echo -e "\nCreating Filesystems...\n$HR"
 mkfs.vfat /dev/sda1
-mkswap /dev/sda2
-swapon /dev/sda2
+# following swap related commands not used now that we're encrypting our swap partition
+#mkswap /dev/sda2
+#swapon /dev/sda2
 #mkfs.ext4 /dev/sda3 # this is where we'd create an unencrypted root partition, but we're using luks instead
 mkfs.ext4 /dev/mapper/root
 
@@ -266,9 +264,15 @@ cat > ${INSTALL_TARGET}/etc/fstab <<FSEOF
 # <file system>		<dir>	<type>	<options>		<dump>	<pass>
 tmpfs			/tmp	tmpfs	nodev,nosuid		0	0
 /dev/sda1		/boot	vfat	defaults		0	0 
-/dev/sda2		none	swap	defaults		0	0 
+/dev/mapper/cryptswap	none	swap	defaults		0	0 
 /dev/mapper/root	/ 	ext4	defaults,noatime	0	1 
 FSEOF
+
+# ------------------------------------------------------------------------
+# crypttab
+# ------------------------------------------------------------------------
+# encrypted swap (random passphrase on boot)
+echo cryptswap /dev/sda2 SWAP "-c aes-xts-plain -h whirlpool -s 512" >> ${INSTALL_TARGET}/etc/crypttab
 
 # ------------------------------------------------------------------------
 # Install EFI
