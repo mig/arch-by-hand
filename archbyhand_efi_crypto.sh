@@ -27,6 +27,31 @@ FTP_URL='ftp://mirrors.kernel.org/archlinux/$repo/os/$arch'
 HTTP_URL='http://mirrors.kernel.org/archlinux/$repo/os/$arch'
 
 # ------------------------------------------------------------------------
+# Functions
+# ------------------------------------------------------------------------
+# I've avoided using functions in this script as they aren't required and
+# I think it's more of a learning tool if you see the step-by-step 
+# procedures even with minor duplciations along the way, but I feel that
+# these functions clarify the particular steps of setting values in config
+# files.
+
+SetValue () { 
+# EXAMPLE: SetValue VARIABLENAME '\"Quoted Value\"' /file/path
+VALUENAME="$1" NEWVALUE="$2" FILEPATH="$3"
+sed -i "s+^#\?\(${VALUENAME}\)=.*$+\1=${NEWVALUE}+" "${FILEPATH}"
+}
+
+CommentOutValue () {
+VALUENAME="$1" FILEPATH="$2"
+sed -i "s/^\(${VALUENAME}.*\)$/#\1/" "${FILEPATH}"
+}
+
+UncommentValue () {
+VALUENAME="$1" FILEPATH="$2"
+sed -i "s/^#\(${VALUENAME}.*\)$/\1/" "${FILEPATH}"
+}
+
+# ------------------------------------------------------------------------
 # Initialize
 # ------------------------------------------------------------------------
 # Warn the user about impending doom, set up the network on eth0, mount
@@ -98,9 +123,9 @@ Server = ${FILE_URL}
 Server = ${FTP_URL}
 Server = ${HTTP_URL}
 
-# Uncomment to enable `pacman -Sy yaourt`
+# Uncomment to enable pacman -Sy yaourt
 #[archlinuxfr]
-#Server = http://repo.archlinux.fr/$arch
+#Server = http://repo.archlinux.fr/\$arch
 PACMANEOF
 
 # Prepare pacman
@@ -113,7 +138,8 @@ ${TARGET_PACMAN} -Sy
 # Install prereqs from network (not on archboot media)
 # ------------------------------------------------------------------------
 echo -e "\nInstalling prereqs...\n$HR"
-sed -i "s/^#S/S/" /etc/pacman.d/mirrorlist
+#sed -i "s/^#S/S/" /etc/pacman.d/mirrorlist # Uncomment all Server lines
+UncommentValue S /etc/pacman.d/mirrorlist # Uncomment all Server lines
 ${PACMAN} --noconfirm -Sy gptfdisk btrfs-progs-unstable
 
 # ------------------------------------------------------------------------
@@ -178,8 +204,8 @@ mount -t vfat /dev/sda1 ${INSTALL_TARGET}/boot
 mkdir -p ${INSTALL_TARGET}/var/lib/pacman
 ${TARGET_PACMAN} -Sy
 ${TARGET_PACMAN} -Su base
-#base plus xorg xfce4 for testing
-#${TARGET_PACMAN} -Su base base-devel xorg xfce4 yaourt
+#base plus others for quick testing
+#${TARGET_PACMAN} -Su base base-devel mesa mesa-demos xorg xfce4 yaourt
 
 # ------------------------------------------------------------------------
 # Prepare to chroot to target
@@ -206,15 +232,20 @@ umount ${INSTALL_TARGET}/boot
 touch ${INSTALL_TARGET}/install_efi
 chmod a+x ${INSTALL_TARGET}/install_efi
 cat > ${INSTALL_TARGET}/install_efi <<EFIEOF
+SetValue () { VALUENAME="\$1" NEWVALUE="\$2" FILEPATH="\$3"; sed -i "s+^#\?\(\${VALUENAME}\)=.*\$+\1=\${NEWVALUE}+" "\${FILEPATH}"; }
+CommentOutValue () { VALUENAME="\$1" FILEPATH="\$2"; sed -i "s/^\(\${VALUENAME}.*\)\$/#\1/" "\${FILEPATH}"; }
+UncommentValue () { VALUENAME="\$1" FILEPATH="\$2"; sed -i "s/^#\(\${VALUENAME}.*\)\$/\1/" "\${FILEPATH}"; }
+
 # remount here or grub et al gets confused
 mount -t vfat /dev/sda1 /boot
 
 # NOTE: intel_agp drm and i915 for intel graphics
-sed -i 's/^MODULES=.*$/MODULES="dm_mod dm_crypt aes_x86_64 ext2 ext4 vfat intel_agp drm i915"/' /etc/mkinitcpio.conf
-sed -i 's/^HOOKS=.*$/HOOKS="base udev pata scsi sata usb usbinput keymap encrypt filesystems"/' /etc/mkinitcpio.conf
+SetValue MODULES '\\"dm_mod dm_crypt aes_x86_64 ext2 ext4 vfat intel_agp drm i915\\"' /etc/mkinitcpio.conf
+SetValue HOOKS '\\"base udev pata scsi sata usb usbinput keymap consolefont encrypt filesystems\\"' /etc/mkinitcpio.conf
 mkinitcpio -p linux
 
-sed -i "s/#\(en_US\.UTF-8.*$\)/\1/" /etc/locale.gen
+#sed -i "s/#\(en_US\.UTF-8.*$\)/\1/" /etc/locale.gen
+UncommentValue en_US /etc/locale.gen
 locale-gen
 
 modprobe efivars
@@ -229,19 +260,14 @@ ${PACMAN} -S grub2-efi-x86_64
 # even omit the cryptdevice altogether, though it will wag a finger at you for using
 # a deprecated syntax, so we're using the correct form here
 # NOTE: take out i915.modeset=1 unless you are on intel graphics
-sed -i 's+^GRUB_CMDLINE_LINUX.*$+GRUB_CMDLINE_LINUX="cryptdevice=/dev/sda3:root add_efi_memmap i915.modeset=1"+' /etc/default/grub
+SetValue GRUB_CMDLINE_LINUX '\\"cryptdevice=/dev/sda3:root add_efi_memmap i915.modeset=1\\"' /etc/default/grub
 
 #sed -i 's+^#\(GRUB_TERMINAL_OUTPUT.*\)$+\1+' /etc/default/grub
 #
 # set output to graphical
-sed -i 's+^#\(GRUB_TERMINAL_OUTPUT\).*$+\1=gfxterm+' /etc/default/grub
-sed -i 's+^#\(GRUB_GFXMODE\).*$+\1=960x600x32,auto+' /etc/default/grub
-
-# without this the LUKS prompt fails to display properly
-# there are probably other ways to get the LUKS prompt working
-# in grub2 graphics mode
-#sed -i 's+^\(GRUB_GFXPAYLOAD_LINUX.*\)$+#\1+' /etc/default/grub
-sed -i 's+^#\(GRUB_GFXPAYLOAD_LINUX\).*$+\1=keep+' /etc/default/grub
+SetValue GRUB_TERMINAL_OUTPUT gfxterm /etc/default/grub
+SetValue GRUB_GFXMODE 960x600x32,auto /etc/default/grub
+SetValue GRUB_GFXPAYLOAD_LINUX keep /etc/default/grub # comment out this value if text only mode
 
 # install the actual grub2. Note that despite our --boot-directory option we will still need to move
 # the grub directory to /boot/grub during grub-mkconfig operations until grub2 gets patched (see below)
@@ -288,6 +314,7 @@ echo cryptswap /dev/sda2 SWAP "-c aes-xts-plain -h whirlpool -s 512" >> ${INSTAL
 # ------------------------------------------------------------------------
 # Install EFI
 # ------------------------------------------------------------------------
+exit
 chroot /install /install_efi
 rm /install/install_efi
 
