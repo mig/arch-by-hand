@@ -198,7 +198,7 @@ mkdir ${INSTALL_TARGET}/boot
 mount -t vfat /dev/sda1 ${INSTALL_TARGET}/boot
 
 # ------------------------------------------------------------------------
-# Install Base
+# Install base
 # ------------------------------------------------------------------------
 
 mkdir -p ${INSTALL_TARGET}/var/lib/pacman
@@ -206,6 +206,12 @@ ${TARGET_PACMAN} -Sy
 ${TARGET_PACMAN} -Su base
 #base plus others for quick testing
 #${TARGET_PACMAN} -Su base base-devel mesa mesa-demos xorg xfce4 yaourt
+
+# ------------------------------------------------------------------------
+# Configure new system
+# ------------------------------------------------------------------------
+SetValue HOSTNAME tau ${INSTALL_TARGET}/etc/rc.conf
+SetValue CONSOLEFONT Lat2-Terminus16 ${INSTALL_TARGET}/etc/rc.conf
 
 # ------------------------------------------------------------------------
 # Prepare to chroot to target
@@ -271,19 +277,29 @@ SetValue GRUB_GFXPAYLOAD_LINUX keep /etc/default/grub # comment out this value i
 
 # install the actual grub2. Note that despite our --boot-directory option we will still need to move
 # the grub directory to /boot/grub during grub-mkconfig operations until grub2 gets patched (see below)
-grub_efi_x86_64-install --root-directory=/boot --boot-directory=/boot/efi --bootloader-id=grub --no-floppy --recheck
+#grub_efi_x86_64-install --root-directory=/boot --boot-directory=/boot/efi --bootloader-id=grub --no-floppy --recheck
+# TEST ROOT LOCATION
+# there is no --root-directory option !
+# and boot directory is /boot/grub by default
+grub_efi_x86_64-install --bootloader-id=grub --no-floppy --recheck
 
 # create our EFI boot entry
-efibootmgr --create --gpt --disk /dev/sda --part 1 --write-signature --label "ARCH LINUX" --loader "\\\\EFI\\\\grub\\\\grub.efi"
+#efibootmgr --create --gpt --disk /dev/sda --part 1 --write-signature --label "ARCH LINUX" --loader "\\\\EFI\\\\grub\\\\grub.efi"
+# TEST ROOT LOCATION
+efibootmgr --create --gpt --disk /dev/sda --part 1 --write-signature --label "ARCH LINUX" --loader "\\\\grub\\\\grub.efi"
 
 # have to build grub at /boot/grub and move to /boot/efi/grub until patch makes it into grub2 as detailed at:
 # http://permalink.gmane.org/gmane.comp.boot-loaders.grub.devel/17950
 # otherwise we'd simply do: 
 # grub-mkconfig -o /boot/efi/grub/grub.cfg
 
-mv /boot/grub /boot/grub.old
-cp /usr/share/grub/unicode.pf2 /boot/efi/grub
-mv /boot/efi/grub /boot && grub-mkconfig -o /boot/grub/grub.cfg && mv /boot/grub /boot/efi
+# OFF TO TEST ROOT LOCATION
+#mv /boot/grub /boot/grub.old
+#cp /usr/share/grub/unicode.pf2 /boot/efi/grub
+#mv /boot/efi/grub /boot && grub-mkconfig -o /boot/grub/grub.cfg && mv /boot/grub /boot/efi
+# TEST ROOT LOCATION
+cp /usr/share/grub/unicode.pf2 /boot/grub
+grub-mkconfig -o /boot/grub/grub.cfg
 
 exit
 EFIEOF
@@ -314,7 +330,6 @@ echo cryptswap /dev/sda2 SWAP "-c aes-xts-plain -h whirlpool -s 512" >> ${INSTAL
 # ------------------------------------------------------------------------
 # Install EFI
 # ------------------------------------------------------------------------
-exit
 chroot /install /install_efi
 rm /install/install_efi
 
