@@ -97,6 +97,10 @@ Server = ${HTTP_URL}
 Server = ${FILE_URL}
 Server = ${FTP_URL}
 Server = ${HTTP_URL}
+
+# Uncomment to enable `pacman -Sy yaourt`
+#[archlinuxfr]
+#Server = http://repo.archlinux.fr/$arch
 PACMANEOF
 
 # Prepare pacman
@@ -174,6 +178,8 @@ mount -t vfat /dev/sda1 ${INSTALL_TARGET}/boot
 mkdir -p ${INSTALL_TARGET}/var/lib/pacman
 ${TARGET_PACMAN} -Sy
 ${TARGET_PACMAN} -Su base
+#base plus xorg xfce4 for testing
+#${TARGET_PACMAN} -Su base base-devel xorg xfce4 yaourt
 
 # ------------------------------------------------------------------------
 # Prepare to chroot to target
@@ -203,7 +209,8 @@ cat > ${INSTALL_TARGET}/install_efi <<EFIEOF
 # remount here or grub et al gets confused
 mount -t vfat /dev/sda1 /boot
 
-sed -i 's/^MODULES=.*$/MODULES="dm_mod dm_crypt aes_x86_64 ext2 ext4 vfat"/' /etc/mkinitcpio.conf
+# NOTE: intel_agp drm and i915 for intel graphics
+sed -i 's/^MODULES=.*$/MODULES="dm_mod dm_crypt aes_x86_64 ext2 ext4 vfat intel_agp drm i915"/' /etc/mkinitcpio.conf
 sed -i 's/^HOOKS=.*$/HOOKS="base udev pata scsi sata usb usbinput keymap encrypt filesystems"/' /etc/mkinitcpio.conf
 mkinitcpio -p linux
 
@@ -221,15 +228,20 @@ ${PACMAN} -S grub2-efi-x86_64
 # you can be surprisingly sloppy with the root value you give grub2 as a kernel option and
 # even omit the cryptdevice altogether, though it will wag a finger at you for using
 # a deprecated syntax, so we're using the correct form here
-sed -i 's+^GRUB_CMDLINE_LINUX.*$+GRUB_CMDLINE_LINUX="cryptdevice=/dev/sda3:root add_efi_memmap"+' /etc/default/grub
+# NOTE: take out i915.modeset=1 unless you are on intel graphics
+sed -i 's+^GRUB_CMDLINE_LINUX.*$+GRUB_CMDLINE_LINUX="cryptdevice=/dev/sda3:root add_efi_memmap i915.modeset=1"+' /etc/default/grub
 
-# probably not necessary... will test
-sed -i 's+^#\(GRUB_TERMINAL_OUTPUT.*\)$+\1+' /etc/default/grub
+#sed -i 's+^#\(GRUB_TERMINAL_OUTPUT.*\)$+\1+' /etc/default/grub
+#
+# set output to graphical
+sed -i 's+^#\(GRUB_TERMINAL_OUTPUT\).*$+\1=gfxterm+' /etc/default/grub
+sed -i 's+^#\(GRUB_GFXMODE\).*$+\1=960x600x32,auto+' /etc/default/grub
 
 # without this the LUKS prompt fails to display properly
 # there are probably other ways to get the LUKS prompt working
 # in grub2 graphics mode
-sed -i 's+^\(GRUB_GFXPAYLOAD_LINUX.*\)$+#\1+' /etc/default/grub
+#sed -i 's+^\(GRUB_GFXPAYLOAD_LINUX.*\)$+#\1+' /etc/default/grub
+sed -i 's+^#\(GRUB_GFXPAYLOAD_LINUX\).*$+\1=keep+' /etc/default/grub
 
 # install the actual grub2. Note that despite our --boot-directory option we will still need to move
 # the grub directory to /boot/grub during grub-mkconfig operations until grub2 gets patched (see below)
@@ -244,9 +256,8 @@ efibootmgr --create --gpt --disk /dev/sda --part 1 --write-signature --label "AR
 # grub-mkconfig -o /boot/efi/grub/grub.cfg
 
 mv /boot/grub /boot/grub.old
-mv /boot/efi/grub /boot
-grub-mkconfig -o /boot/grub/grub.cfg
-mv /boot/grub /boot/efi
+cp /usr/share/grub/unicode.pf2 /boot/efi/grub
+mv /boot/efi/grub /boot && grub-mkconfig -o /boot/grub/grub.cfg && mv /boot/grub /boot/efi
 
 exit
 EFIEOF

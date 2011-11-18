@@ -4,6 +4,11 @@
 # --------------------
 # mount /dev/sdb1 /src
 
+# ------------------------------------------------------------------------
+# NOTE: THIS IS JUST A ROUGH SAMPLE. SEE THE CRYPT VERSION OF THIS 
+# SCRIPT FOR A MORE DETAILED EXAMPLE WITH BETTER COMMENTS
+# ------------------------------------------------------------------------
+
 set -o nounset
 #set -o errexit
 
@@ -194,12 +199,11 @@ cat > ${INSTALL_TARGET}/etc/fstab <<FSEOF
 # 
 # /etc/fstab: static file system information
 #
-# <file system>	<dir>	<type>	<options>	<dump>	<pass>
-tmpfs		/tmp	tmpfs	nodev,nosuid	0	0
-#/dev/sda1	/boot/efi	vfat	noauto 		0	0 
-/dev/sda1	/boot	vfat	noauto 		0	0 
-/dev/sda2	none 		swap	swap		0	0 
-/dev/sda3	/ 		ext4	noatime,discard	0	1 
+# <file system>	<dir>		<type>	<options>		<dump>	<pass>
+tmpfs		/tmp		tmpfs	nodev,nosuid		0	0
+/dev/sda1	/boot		vfat	defaults		0	0 
+/dev/sda2	none 		swap	swap			0	0 
+/dev/sda3	/ 		ext4	noatime,discard		0	1 
 FSEOF
 
 # ------------------------------------------------------------------------
