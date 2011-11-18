@@ -195,6 +195,7 @@ ${PACMAN} -S grub2-efi-x86_64
 
 sed -i 's+^GRUB_CMDLINE_LINUX.*$+GRUB_CMDLINE_LINUX="cryptdevice=/dev/sda3:root add_efi_memmap"+' /etc/default/grub
 sed -i 's+^#\(GRUB_TERMINAL_OUTPUT.*\)$+\1+' /etc/default/grub
+sed -i 's+^\(GRUB_GFXPAYLOAD_LINUX.*\)$+#\1+' /etc/default/grub
 grub_efi_x86_64-install --root-directory=/boot --boot-directory=/boot/efi --bootloader-id=grub --no-floppy --recheck
 
 efibootmgr --create --gpt --disk /dev/sda --part 1 --write-signature --label "ARCH LINUX" --loader "\\\\EFI\\\\grub\\\\grub.efi"
