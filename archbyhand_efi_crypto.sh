@@ -12,6 +12,14 @@ set -o nounset
 #set -o errexit
 
 # ------------------------------------------------------------------------
+# Host specific configuration
+# ------------------------------------------------------------------------
+# this whole script needs to be customized, particularly disk partitions
+# and configuration, but this section contains global variables that
+# are used during the system configuration phase for convenience
+HOSTNAME=alpha
+
+# ------------------------------------------------------------------------
 # Globals
 # ------------------------------------------------------------------------
 # We don't need to set these here but they are used repeatedly throughout
@@ -210,8 +218,10 @@ ${TARGET_PACMAN} -Su base
 # ------------------------------------------------------------------------
 # Configure new system
 # ------------------------------------------------------------------------
-SetValue HOSTNAME tau ${INSTALL_TARGET}/etc/rc.conf
+SetValue HOSTNAME ${HOSTNAME} ${INSTALL_TARGET}/etc/rc.conf
+sed -i "s/^\(127\.0\.0\.1.*\)$/\1 ${HOSTNAME}/" ${INSTALL_TARGET}/etc/hosts
 SetValue CONSOLEFONT Lat2-Terminus16 ${INSTALL_TARGET}/etc/rc.conf
+SetValue interface eth0 ${INSTALL_TARGET}/etc/rc.conf
 
 # ------------------------------------------------------------------------
 # Prepare to chroot to target
