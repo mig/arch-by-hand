@@ -9,7 +9,6 @@
 # mount /dev/sdb1 /src
 
 set -o nounset
-#set -o errexit
 
 # ------------------------------------------------------------------------
 # Host specific configuration
@@ -17,7 +16,8 @@ set -o nounset
 # this whole script needs to be customized, particularly disk partitions
 # and configuration, but this section contains global variables that
 # are used during the system configuration phase for convenience
-HOSTNAME=alpha
+HOSTNAME=tau
+USERNAME=es
 
 # ------------------------------------------------------------------------
 # Globals
@@ -30,6 +30,7 @@ INSTALL_TARGET="/install"
 HR="--------------------------------------------------------------------------------"
 PACMAN="pacman --noconfirm --config /tmp/pacman.conf"
 TARGET_PACMAN="pacman --noconfirm --config /tmp/pacman.conf -r ${INSTALL_TARGET}"
+CHROOT_PACMAN="pacman --noconfirm --cachedir /var/cache/pacman/pkg --config /tmp/pacman.conf -r ${INSTALL_TARGET}"
 FILE_URL="file:///packages/core-$(uname -m)/pkg"
 FTP_URL='ftp://mirrors.kernel.org/archlinux/$repo/os/$arch'
 HTTP_URL='http://mirrors.kernel.org/archlinux/$repo/os/$arch'
@@ -93,7 +94,6 @@ echo "STARTING"
 # Get Network
 # ------------------------------------------------------------------------
 echo -n "Waiting for network address.."
-#dhclient eth0
 dhcpcd -p eth0
 echo -n "Network address acquired."
 
@@ -132,6 +132,7 @@ Server = ${FTP_URL}
 Server = ${HTTP_URL}
 
 # Uncomment to enable pacman -Sy yaourt
+# (in this script we're doing this in the Post Install step below)
 #[archlinuxfr]
 #Server = http://repo.archlinux.fr/\$arch
 PACMANEOF
@@ -146,7 +147,6 @@ ${TARGET_PACMAN} -Sy
 # Install prereqs from network (not on archboot media)
 # ------------------------------------------------------------------------
 echo -e "\nInstalling prereqs...\n$HR"
-#sed -i "s/^#S/S/" /etc/pacman.d/mirrorlist # Uncomment all Server lines
 UncommentValue S /etc/pacman.d/mirrorlist # Uncomment all Server lines
 ${PACMAN} --noconfirm -Sy gptfdisk btrfs-progs-unstable
 
@@ -206,121 +206,35 @@ mkdir ${INSTALL_TARGET}/boot
 mount -t vfat /dev/sda1 ${INSTALL_TARGET}/boot
 
 # ------------------------------------------------------------------------
-# Install base
+# Install base, necessary utilities
 # ------------------------------------------------------------------------
+# note: curl could be installed later but we want it ready for rankmirrors
 
 mkdir -p ${INSTALL_TARGET}/var/lib/pacman
 ${TARGET_PACMAN} -Sy
 ${TARGET_PACMAN} -Su base
-#base plus others for quick testing
-#${TARGET_PACMAN} -Su base base-devel mesa mesa-demos xorg xfce4 yaourt
+${TARGET_PACMAN} -S curl
+${TARGET_PACMAN} -R grub
+rm -rf ${INSTALL_TARGET}/boot/grub
+${TARGET_PACMAN} -S grub2-efi-x86_64
 
 # ------------------------------------------------------------------------
 # Configure new system
 # ------------------------------------------------------------------------
+
 SetValue HOSTNAME ${HOSTNAME} ${INSTALL_TARGET}/etc/rc.conf
 sed -i "s/^\(127\.0\.0\.1.*\)$/\1 ${HOSTNAME}/" ${INSTALL_TARGET}/etc/hosts
 SetValue CONSOLEFONT Lat2-Terminus16 ${INSTALL_TARGET}/etc/rc.conf
 SetValue interface eth0 ${INSTALL_TARGET}/etc/rc.conf
 
 # ------------------------------------------------------------------------
-# Prepare to chroot to target
-# ------------------------------------------------------------------------
-
-mv ${INSTALL_TARGET}/etc/resolv.conf ${INSTALL_TARGET}/etc/resolv.conf.orig
-cp /etc/resolv.conf ${INSTALL_TARGET}/etc/resolv.conf
-mkdir -p ${INSTALL_TARGET}/tmp
-cp /tmp/pacman.conf ${INSTALL_TARGET}/tmp/pacman.conf
-mount -t proc proc ${INSTALL_TARGET}/proc
-mount -t sysfs sys ${INSTALL_TARGET}/sys
-mount -o bind /dev ${INSTALL_TARGET}/dev
-echo -e "${HR}\nINSTALL BASE COMPLETE\n${HR}"
-
-# umount or things get confused. yes, really.
-umount ${INSTALL_TARGET}/boot
-
-# ------------------------------------------------------------------------
-# Write Files
-# ------------------------------------------------------------------------
-
-# install_efi (to be run *after* chroot /install)
-# ------------------------------------------------------------------------
-touch ${INSTALL_TARGET}/install_efi
-chmod a+x ${INSTALL_TARGET}/install_efi
-cat > ${INSTALL_TARGET}/install_efi <<EFIEOF
-SetValue () { VALUENAME="\$1" NEWVALUE="\$2" FILEPATH="\$3"; sed -i "s+^#\?\(\${VALUENAME}\)=.*\$+\1=\${NEWVALUE}+" "\${FILEPATH}"; }
-CommentOutValue () { VALUENAME="\$1" FILEPATH="\$2"; sed -i "s/^\(\${VALUENAME}.*\)\$/#\1/" "\${FILEPATH}"; }
-UncommentValue () { VALUENAME="\$1" FILEPATH="\$2"; sed -i "s/^#\(\${VALUENAME}.*\)\$/\1/" "\${FILEPATH}"; }
-
-# remount here or grub et al gets confused
-mount -t vfat /dev/sda1 /boot
-
-# NOTE: intel_agp drm and i915 for intel graphics
-SetValue MODULES '\\"dm_mod dm_crypt aes_x86_64 ext2 ext4 vfat intel_agp drm i915\\"' /etc/mkinitcpio.conf
-SetValue HOOKS '\\"base udev pata scsi sata usb usbinput keymap consolefont encrypt filesystems\\"' /etc/mkinitcpio.conf
-mkinitcpio -p linux
-
-#sed -i "s/#\(en_US\.UTF-8.*$\)/\1/" /etc/locale.gen
-UncommentValue en_US /etc/locale.gen
-locale-gen
-
-modprobe efivars
-modprobe dm-mod
-
-${PACMAN} -Sy
-${PACMAN} -R grub
-rm -rf /boot/grub
-${PACMAN} -S grub2-efi-x86_64
-
-# you can be surprisingly sloppy with the root value you give grub2 as a kernel option and
-# even omit the cryptdevice altogether, though it will wag a finger at you for using
-# a deprecated syntax, so we're using the correct form here
-# NOTE: take out i915.modeset=1 unless you are on intel graphics
-SetValue GRUB_CMDLINE_LINUX '\\"cryptdevice=/dev/sda3:root add_efi_memmap i915.modeset=1\\"' /etc/default/grub
-
-#sed -i 's+^#\(GRUB_TERMINAL_OUTPUT.*\)$+\1+' /etc/default/grub
-#
-# set output to graphical
-SetValue GRUB_TERMINAL_OUTPUT gfxterm /etc/default/grub
-SetValue GRUB_GFXMODE 960x600x32,auto /etc/default/grub
-SetValue GRUB_GFXPAYLOAD_LINUX keep /etc/default/grub # comment out this value if text only mode
-
-# install the actual grub2. Note that despite our --boot-directory option we will still need to move
-# the grub directory to /boot/grub during grub-mkconfig operations until grub2 gets patched (see below)
-#grub_efi_x86_64-install --root-directory=/boot --boot-directory=/boot/efi --bootloader-id=grub --no-floppy --recheck
-# TEST ROOT LOCATION
-# there is no --root-directory option !
-# and boot directory is /boot/grub by default
-grub_efi_x86_64-install --bootloader-id=grub --no-floppy --recheck
-
-# create our EFI boot entry
-#efibootmgr --create --gpt --disk /dev/sda --part 1 --write-signature --label "ARCH LINUX" --loader "\\\\EFI\\\\grub\\\\grub.efi"
-# TEST ROOT LOCATION
-efibootmgr --create --gpt --disk /dev/sda --part 1 --write-signature --label "ARCH LINUX" --loader "\\\\grub\\\\grub.efi"
-
-# have to build grub at /boot/grub and move to /boot/efi/grub until patch makes it into grub2 as detailed at:
-# http://permalink.gmane.org/gmane.comp.boot-loaders.grub.devel/17950
-# otherwise we'd simply do: 
-# grub-mkconfig -o /boot/efi/grub/grub.cfg
-
-# OFF TO TEST ROOT LOCATION
-#mv /boot/grub /boot/grub.old
-#cp /usr/share/grub/unicode.pf2 /boot/efi/grub
-#mv /boot/efi/grub /boot && grub-mkconfig -o /boot/grub/grub.cfg && mv /boot/grub /boot/efi
-# TEST ROOT LOCATION
-cp /usr/share/grub/unicode.pf2 /boot/grub
-grub-mkconfig -o /boot/grub/grub.cfg
-
-exit
-EFIEOF
-
-# ------------------------------------------------------------------------
-# fstab
+# write fstab
 # ------------------------------------------------------------------------
 # You can use UUID's or whatever you want here, of course. This is just
 # the simplest approach and as long as your drives aren't changing values
 # randomly it should work fine.
-cat > ${INSTALL_TARGET}/etc/fstab <<FSEOF
+
+cat > ${INSTALL_TARGET}/etc/fstab <<FSTAB_EOF
 # 
 # /etc/fstab: static file system information
 #
@@ -329,19 +243,174 @@ tmpfs			/tmp	tmpfs	nodev,nosuid		0	0
 /dev/sda1		/boot	vfat	defaults		0	0 
 /dev/mapper/cryptswap	none	swap	defaults		0	0 
 /dev/mapper/root	/ 	ext4	defaults,noatime	0	1 
-FSEOF
+FSTAB_EOF
 
 # ------------------------------------------------------------------------
-# crypttab
+# write crypttab
 # ------------------------------------------------------------------------
 # encrypted swap (random passphrase on boot)
+
 echo cryptswap /dev/sda2 SWAP "-c aes-xts-plain -h whirlpool -s 512" >> ${INSTALL_TARGET}/etc/crypttab
 
 # ------------------------------------------------------------------------
-# Install EFI
+# copy configs we want to carry over to target from install environment
 # ------------------------------------------------------------------------
-chroot /install /install_efi
-rm /install/install_efi
+
+mv ${INSTALL_TARGET}/etc/resolv.conf ${INSTALL_TARGET}/etc/resolv.conf.orig
+cp /etc/resolv.conf ${INSTALL_TARGET}/etc/resolv.conf
+
+mkdir -p ${INSTALL_TARGET}/tmp
+cp /tmp/pacman.conf ${INSTALL_TARGET}/tmp/pacman.conf
+
+# ------------------------------------------------------------------------
+# mount proc, sys, dev in install root
+# ------------------------------------------------------------------------
+
+mount -t proc proc ${INSTALL_TARGET}/proc
+mount -t sysfs sys ${INSTALL_TARGET}/sys
+mount -o bind /dev ${INSTALL_TARGET}/dev
+
+# we have to remount /boot from inside the chroot
+umount ${INSTALL_TARGET}/boot
+
+# ------------------------------------------------------------------------
+# Create install_efi script (to be run *after* chroot /install)
+# ------------------------------------------------------------------------
+
+touch ${INSTALL_TARGET}/install_efi
+chmod a+x ${INSTALL_TARGET}/install_efi
+cat > ${INSTALL_TARGET}/install_efi <<EFI_EOF
+
+# functions (these could be a library, but why overcomplicate things
+# ------------------------------------------------------------------------
+SetValue () { VALUENAME="\$1" NEWVALUE="\$2" FILEPATH="\$3"; sed -i "s+^#\?\(\${VALUENAME}\)=.*\$+\1=\${NEWVALUE}+" "\${FILEPATH}"; }
+CommentOutValue () { VALUENAME="\$1" FILEPATH="\$2"; sed -i "s/^\(\${VALUENAME}.*\)\$/#\1/" "\${FILEPATH}"; }
+UncommentValue () { VALUENAME="\$1" FILEPATH="\$2"; sed -i "s/^#\(\${VALUENAME}.*\)\$/\1/" "\${FILEPATH}"; }
+
+# remount here or grub et al gets confused
+# ------------------------------------------------------------------------
+mount -t vfat /dev/sda1 /boot
+
+# mkinitcpio
+# ------------------------------------------------------------------------
+# NOTE: intel_agp drm and i915 for intel graphics
+SetValue MODULES '\\"dm_mod dm_crypt aes_x86_64 ext2 ext4 vfat intel_agp drm i915\\"' /etc/mkinitcpio.conf
+SetValue HOOKS '\\"base udev pata scsi sata usb usbinput keymap consolefont encrypt filesystems\\"' /etc/mkinitcpio.conf
+mkinitcpio -p linux
+
+# locale-gen
+# ------------------------------------------------------------------------
+UncommentValue en_US /etc/locale.gen
+locale-gen
+
+# kernel modules for EFI install
+# ------------------------------------------------------------------------
+modprobe efivars
+modprobe dm-mod
+
+# configure grub2
+# ------------------------------------------------------------------------
+# grub2 installed above, natch
+
+# you can be surprisingly sloppy with the root value you give grub2 as a kernel option and
+# even omit the cryptdevice altogether, though it will wag a finger at you for using
+# a deprecated syntax, so we're using the correct form here
+# NOTE: take out i915.modeset=1 unless you are on intel graphics
+SetValue GRUB_CMDLINE_LINUX '\\"cryptdevice=/dev/sda3:root add_efi_memmap i915.modeset=1\\"' /etc/default/grub
+
+# set output to graphical
+SetValue GRUB_TERMINAL_OUTPUT gfxterm /etc/default/grub
+SetValue GRUB_GFXMODE 960x600x32,auto /etc/default/grub
+SetValue GRUB_GFXPAYLOAD_LINUX keep /etc/default/grub # comment out this value if text only mode
+
+# install the actual grub2. Note that despite our --boot-directory option we will still need to move
+# the grub directory to /boot/grub during grub-mkconfig operations until grub2 gets patched (see below)
+grub_efi_x86_64-install --bootloader-id=grub --no-floppy --recheck
+
+# create our EFI boot entry
+efibootmgr --create --gpt --disk /dev/sda --part 1 --write-signature --label "ARCH LINUX" --loader "\\\\grub\\\\grub.efi"
+
+# copy font for grub2
+cp /usr/share/grub/unicode.pf2 /boot/grub
+
+# generate config file
+grub-mkconfig -o /boot/grub/grub.cfg
+
+exit
+EFI_EOF
+
+# ------------------------------------------------------------------------
+# Install EFI using script inside chroot
+# ------------------------------------------------------------------------
+
+chroot ${INSTALL_TARGET} /install_efi
+rm ${INSTALL_TARGET}/install_efi
+
+# ------------------------------------------------------------------------
+# Post install steps
+# ------------------------------------------------------------------------
+# anything you want to do post install. run the script automatically or
+# manually
+
+touch ${INSTALL_TARGET}/post_install
+chmod a+x ${INSTALL_TARGET}/post_install
+cat > ${INSTALL_TARGET}/post_install <<POST_EOF
+set -o errexit
+set -o nounset
+# root password
+echo -e "${HR}\\nNew root user password\\n${HR}"
+passwd
+
+# add user
+echo -e "${HR}\\nNew non-root user password (username:${USERNAME})\\n${HR}"
+useradd -m -g users -G audio,lp,optical,storage,video,games,power,scanner,network -s /bin/bash ${USERNAME}
+passwd ${USERNAME}
+
+# configure the network
+
+# mirror ranking
+echo -e "${HR}\\nRanking Mirrors (this will take a while)\\n${HR}"
+cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.orig
+mv /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.all
+sed -i "s/#S/S/" /etc/pacman.d/mirrorlist.all
+rankmirrors -n 5 /etc/pacman.d/mirrorlist.all > /etc/pacman.d/mirrorlist
+
+# temporary fix for locale.sh update conflict
+mv /etc/profile.d/locale.sh /etc/profile.d/locale.sh.preupdate || true
+
+# yaourt repo (add to target pacman, not tmp pacman.conf, for ongoing use)
+echo -e "\\n[archlinuxfr]\\nServer = http://repo.archlinux.fr/\\\$arch" >> /etc/pacman.conf
+
+# additional groups and utilities
+pacman --noconfirm -Syu base-devel mesa mesa-demos xorg xfce4 yaourt
+pacman --noconfirm -S chromium flashplugin
+
+# sudo
+
+# sound
+
+# video
+
+# x
+
+# fonts
+
+# environment/wm/etc.
+
+# misc apps
+POST_EOF
+
+# ------------------------------------------------------------------------
+# Post install in chroot
+# ------------------------------------------------------------------------
+
+# manually:
+echo "chroot ${INSTALL_TARGET} and run /post_install"
+
+# or automatically:
+#chroot /install /post_install
+#rm /install/post_install
+
 
 # ------------------------------------------------------------------------
 # NOTES/TODO
