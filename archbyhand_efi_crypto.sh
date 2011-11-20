@@ -9,6 +9,7 @@
 # mount /dev/sdb1 /src
 
 set -o nounset
+#set -o errexit
 
 # ------------------------------------------------------------------------
 # Host specific configuration
@@ -94,6 +95,7 @@ echo "STARTING"
 # Get Network
 # ------------------------------------------------------------------------
 echo -n "Waiting for network address.."
+#dhclient eth0
 dhcpcd -p eth0
 echo -n "Network address acquired."
 
@@ -132,7 +134,6 @@ Server = ${FTP_URL}
 Server = ${HTTP_URL}
 
 # Uncomment to enable pacman -Sy yaourt
-# (in this script we're doing this in the Post Install step below)
 #[archlinuxfr]
 #Server = http://repo.archlinux.fr/\$arch
 PACMANEOF
@@ -147,6 +148,7 @@ ${TARGET_PACMAN} -Sy
 # Install prereqs from network (not on archboot media)
 # ------------------------------------------------------------------------
 echo -e "\nInstalling prereqs...\n$HR"
+#sed -i "s/^#S/S/" /etc/pacman.d/mirrorlist # Uncomment all Server lines
 UncommentValue S /etc/pacman.d/mirrorlist # Uncomment all Server lines
 ${PACMAN} --noconfirm -Sy gptfdisk btrfs-progs-unstable
 
@@ -208,11 +210,11 @@ mount -t vfat /dev/sda1 ${INSTALL_TARGET}/boot
 # ------------------------------------------------------------------------
 # Install base, necessary utilities
 # ------------------------------------------------------------------------
-# note: curl could be installed later but we want it ready for rankmirrors
 
 mkdir -p ${INSTALL_TARGET}/var/lib/pacman
 ${TARGET_PACMAN} -Sy
 ${TARGET_PACMAN} -Su base
+# curl could be installed later but we want it ready for rankmirrors
 ${TARGET_PACMAN} -S curl
 ${TARGET_PACMAN} -R grub
 rm -rf ${INSTALL_TARGET}/boot/grub
@@ -221,7 +223,6 @@ ${TARGET_PACMAN} -S grub2-efi-x86_64
 # ------------------------------------------------------------------------
 # Configure new system
 # ------------------------------------------------------------------------
-
 SetValue HOSTNAME ${HOSTNAME} ${INSTALL_TARGET}/etc/rc.conf
 sed -i "s/^\(127\.0\.0\.1.*\)$/\1 ${HOSTNAME}/" ${INSTALL_TARGET}/etc/hosts
 SetValue CONSOLEFONT Lat2-Terminus16 ${INSTALL_TARGET}/etc/rc.conf
@@ -233,7 +234,6 @@ SetValue interface eth0 ${INSTALL_TARGET}/etc/rc.conf
 # You can use UUID's or whatever you want here, of course. This is just
 # the simplest approach and as long as your drives aren't changing values
 # randomly it should work fine.
-
 cat > ${INSTALL_TARGET}/etc/fstab <<FSTAB_EOF
 # 
 # /etc/fstab: static file system information
@@ -249,7 +249,6 @@ FSTAB_EOF
 # write crypttab
 # ------------------------------------------------------------------------
 # encrypted swap (random passphrase on boot)
-
 echo cryptswap /dev/sda2 SWAP "-c aes-xts-plain -h whirlpool -s 512" >> ${INSTALL_TARGET}/etc/crypttab
 
 # ------------------------------------------------------------------------
@@ -308,9 +307,13 @@ locale-gen
 modprobe efivars
 modprobe dm-mod
 
-# configure grub2
+# install and configure grub2
 # ------------------------------------------------------------------------
-# grub2 installed above, natch
+# did this above
+#${CHROOT_PACMAN} -Sy
+#${CHROOT_PACMAN} -R grub
+#rm -rf /boot/grub
+#${CHROOT_PACMAN} -S grub2-efi-x86_64
 
 # you can be surprisingly sloppy with the root value you give grub2 as a kernel option and
 # even omit the cryptdevice altogether, though it will wag a finger at you for using
@@ -342,7 +345,6 @@ EFI_EOF
 # ------------------------------------------------------------------------
 # Install EFI using script inside chroot
 # ------------------------------------------------------------------------
-
 chroot ${INSTALL_TARGET} /install_efi
 rm ${INSTALL_TARGET}/install_efi
 
@@ -363,7 +365,8 @@ passwd
 
 # add user
 echo -e "${HR}\\nNew non-root user password (username:${USERNAME})\\n${HR}"
-useradd -m -g users -G audio,lp,optical,storage,video,games,power,scanner,network -s /bin/bash ${USERNAME}
+groupadd sudo
+useradd -m -g users -G audio,lp,optical,storage,video,games,power,scanner,network,sudo,wheel -s /bin/bash ${USERNAME}
 passwd ${USERNAME}
 
 # configure the network
@@ -382,32 +385,52 @@ mv /etc/profile.d/locale.sh /etc/profile.d/locale.sh.preupdate || true
 echo -e "\\n[archlinuxfr]\\nServer = http://repo.archlinux.fr/\\\$arch" >> /etc/pacman.conf
 
 # additional groups and utilities
-pacman --noconfirm -Syu base-devel mesa mesa-demos xorg xfce4 yaourt
-pacman --noconfirm -S chromium flashplugin
+pacman --noconfirm -Syu
+pacman --noconfirm -S base-devel yaourt
 
 # sudo
+pacman --noconfirm -S sudo
+cp /etc/sudoers /tmp/sudoers.edit
+sed -i "s/#\s*\(%wheel\s*ALL=(ALL)\s*ALL.*$\)/\1/" /tmp/sudoers.edit
+sed -i "s/#\s*\(%sudo\s*ALL=(ALL)\s*ALL.*$\)/\1/" /tmp/sudoers.edit
+visudo -qcsf /tmp/sudoers.edit && cat /tmp/sudoers.edit > /etc/sudoers 
 
 # sound
+pacman --noconfirm -S alsa-utils alsa-plugins
+sed -i "/^DAEMONS/ s/)/ @alsa)/" /etc/rc.conf
+mv /etc/asound.conf /etc/asound.conf.orig
+#alsaconf fails on some installs?
+#alsamixer alone isn't working, but alsamixer -Dhw is
+#alsamixer -Dhw
+#speaker-test -c 2
+#speaker-test -Dhw -c 2
+#alsactl -f /var/lib/alsa/asound.state store
 
 # video
+pacman --noconfirm -S base-devel mesa mesa-demos
 
 # x
-
-# fonts
+pacman --noconfirm -S xorg
 
 # environment/wm/etc.
+pacman --noconfirm -S xfce4 compiz ccsm
+yaourt --noconfirm -S xmonad-darcs xmonad-contrib-darcs
+pacman --noconfirm -S rxvt-unicode urxvt-url-select
+# TODO: edit xfce to use compiz
+# TODO: xmonad, but deal with video tearing
+
+# fonts
+# TODO: terminus and lettergothic
 
 # misc apps
+pacman --noconfirm -S chromium flashplugin
+
 POST_EOF
 
 # ------------------------------------------------------------------------
 # Post install in chroot
 # ------------------------------------------------------------------------
-
-# manually:
-echo "chroot ${INSTALL_TARGET} and run /post_install"
-
-# or automatically:
+echo "chroot and run /post_install"
 #chroot /install /post_install
 #rm /install/post_install
 
