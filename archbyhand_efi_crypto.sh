@@ -479,7 +479,7 @@ yaourt --noconfirm -S freetype2-git-infinality
 
 # misc apps
 # ------------------------------------------------------------------------
-pacman --noconfirm -S htop openssh bash-completion git vim
+pacman --noconfirm -S htop openssh keychain bash-completion git vim
 pacman --noconfirm -S chromium flashplugin
 pacman --noconfirm -S scrot mypaint
 yaourt --noconfirm -S task-git stellarium googlecl
