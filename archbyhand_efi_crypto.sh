@@ -226,7 +226,8 @@ ${TARGET_PACMAN} -S grub2-efi-x86_64
 SetValue HOSTNAME ${HOSTNAME} ${INSTALL_TARGET}/etc/rc.conf
 sed -i "s/^\(127\.0\.0\.1.*\)$/\1 ${HOSTNAME}/" ${INSTALL_TARGET}/etc/hosts
 SetValue CONSOLEFONT Lat2-Terminus16 ${INSTALL_TARGET}/etc/rc.conf
-SetValue interface eth0 ${INSTALL_TARGET}/etc/rc.conf
+#following replaced due to netcfg
+#SetValue interface eth0 ${INSTALL_TARGET}/etc/rc.conf
 
 # ------------------------------------------------------------------------
 # write fstab
@@ -319,7 +320,7 @@ modprobe dm-mod
 # even omit the cryptdevice altogether, though it will wag a finger at you for using
 # a deprecated syntax, so we're using the correct form here
 # NOTE: take out i915.modeset=1 unless you are on intel graphics
-SetValue GRUB_CMDLINE_LINUX '\\"cryptdevice=/dev/sda3:root add_efi_memmap i915.modeset=1\\"' /etc/default/grub
+SetValue GRUB_CMDLINE_LINUX '\\"cryptdevice=/dev/sda3:root add_efi_memmap i915.modeset=1 i915.i915_enable_rc6=1 i915.i915_enable_fbc=1 i915.lvds_downclock=1 pcie_aspm=force quiet\\"' /etc/default/grub
 
 # set output to graphical
 SetValue GRUB_TERMINAL_OUTPUT gfxterm /etc/default/grub
@@ -359,19 +360,27 @@ chmod a+x ${INSTALL_TARGET}/post_install
 cat > ${INSTALL_TARGET}/post_install <<POST_EOF
 set -o errexit
 set -o nounset
+
+# functions (these could be a library, but why overcomplicate things
+# ------------------------------------------------------------------------
+SetValue () { VALUENAME="\$1" NEWVALUE="\$2" FILEPATH="\$3"; sed -i "s+^#\?\(\${VALUENAME}\)=.*\$+\1=\${NEWVALUE}+" "\${FILEPATH}"; }
+CommentOutValue () { VALUENAME="\$1" FILEPATH="\$2"; sed -i "s/^\(\${VALUENAME}.*\)\$/#\1/" "\${FILEPATH}"; }
+UncommentValue () { VALUENAME="\$1" FILEPATH="\$2"; sed -i "s/^#\(\${VALUENAME}.*\)\$/\1/" "\${FILEPATH}"; }
+
 # root password
+# ------------------------------------------------------------------------
 echo -e "${HR}\\nNew root user password\\n${HR}"
 passwd
 
 # add user
+# ------------------------------------------------------------------------
 echo -e "${HR}\\nNew non-root user password (username:${USERNAME})\\n${HR}"
 groupadd sudo
 useradd -m -g users -G audio,lp,optical,storage,video,games,power,scanner,network,sudo,wheel -s /bin/bash ${USERNAME}
 passwd ${USERNAME}
 
-# configure the network
-
 # mirror ranking
+# ------------------------------------------------------------------------
 echo -e "${HR}\\nRanking Mirrors (this will take a while)\\n${HR}"
 cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.orig
 mv /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.all
@@ -379,60 +388,111 @@ sed -i "s/#S/S/" /etc/pacman.d/mirrorlist.all
 rankmirrors -n 5 /etc/pacman.d/mirrorlist.all > /etc/pacman.d/mirrorlist
 
 # temporary fix for locale.sh update conflict
+# ------------------------------------------------------------------------
 mv /etc/profile.d/locale.sh /etc/profile.d/locale.sh.preupdate || true
 
 # yaourt repo (add to target pacman, not tmp pacman.conf, for ongoing use)
+# ------------------------------------------------------------------------
 echo -e "\\n[archlinuxfr]\\nServer = http://repo.archlinux.fr/\\\$arch" >> /etc/pacman.conf
+echo -e "\\n[haskell]\\nServer = http://www.kiwilight.com/\\\$repo/\\\$arch" >> /etc/pacman.conf
 
 # additional groups and utilities
+# ------------------------------------------------------------------------
 pacman --noconfirm -Syu
-pacman --noconfirm -S base-devel yaourt
+pacman --noconfirm -S base-devel
+pacman --noconfirm -S yaourt
 
 # sudo
+# ------------------------------------------------------------------------
 pacman --noconfirm -S sudo
 cp /etc/sudoers /tmp/sudoers.edit
 sed -i "s/#\s*\(%wheel\s*ALL=(ALL)\s*ALL.*$\)/\1/" /tmp/sudoers.edit
 sed -i "s/#\s*\(%sudo\s*ALL=(ALL)\s*ALL.*$\)/\1/" /tmp/sudoers.edit
 visudo -qcsf /tmp/sudoers.edit && cat /tmp/sudoers.edit > /etc/sudoers 
 
+# power
+# ------------------------------------------------------------------------
+pacman --noconfirm -S acpi acpid acpitool cpufrequtils
+yaourt --noconfirm -S powertop2
+sed -i "/^DAEMONS/ s/)/ @acpid)/" /etc/rc.conf
+sed -i "/^MODULES/ s/)/ acpi-cpufreq cpufreq_ondemand cpufreq_powersave coretemp)/" /etc/rc.conf
+# following requires my acpi handler script
+echo "/etc/acpi/handler.sh boot" > /etc/rc.local
+
+# time
+# ------------------------------------------------------------------------
+pacman --noconfirm -S ntp
+sed -i "/^DAEMONS/ s/hwclock /!hwclock @ntpd /" /etc/rc.conf
+
+# wireless (wpa supplicant should already be installed)
+# ------------------------------------------------------------------------
+pacman --noconfirm -S iw wpa_supplicant rfkill
+pacman --noconfirm -S netcfg wpa_actiond ifplugd
+mv /etc/wpa_supplicant.conf /etc/wpa_supplicant.conf.orig
+echo -e "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=network\nupdate_config=1" > /etc/wpa_supplicant.conf
+# make sure to copy /etc/network.d/examples/wireless-wpa-config to /etc/network.d/home and edit
+sed -i "/^DAEMONS/ s/)/ @net-auto-wireless @net-auto-wired)/" /etc/rc.conf
+sed -i "/^DAEMONS/ s/ network / /" /etc/rc.conf
+echo -e "\nWIRELESS_INTERFACE=wlan0" >> /etc/rc.conf
+echo -e "WIRED_INTERFACE=eth0" >> /etc/rc.conf
+echo "options iwlagn led_mode=2" > /etc/modprobe.d/iwlagn.conf
+
 # sound
+# ------------------------------------------------------------------------
 pacman --noconfirm -S alsa-utils alsa-plugins
 sed -i "/^DAEMONS/ s/)/ @alsa)/" /etc/rc.conf
-mv /etc/asound.conf /etc/asound.conf.orig
-#alsaconf fails on some installs?
-#alsamixer alone isn't working, but alsamixer -Dhw is
-#alsamixer -Dhw
-#speaker-test -c 2
-#speaker-test -Dhw -c 2
-#alsactl -f /var/lib/alsa/asound.state store
+mv /etc/asound.conf /etc/asound.conf.orig || true
+#if alsamixer isn't working, try alsamixer -Dhw and speaker-test -Dhw -c 2
 
 # video
+# ------------------------------------------------------------------------
 pacman --noconfirm -S base-devel mesa mesa-demos
 
 # x
-pacman --noconfirm -S xorg
+# ------------------------------------------------------------------------
+pacman --noconfirm -S xorg xorg-utils xdotool xorg-xlsfonts
+yaourt --noconfirm -S xf86-input-wacom-git # NOT NEEDED? input-wacom-git
+#TODO: cut down the install size
+#pacman --noconfirm -S xorg-server xorg-xinit xorg-utils xorg-server-utils
+
+# TODO: wacom
 
 # environment/wm/etc.
-pacman --noconfirm -S xfce4 compiz ccsm
-yaourt --noconfirm -S xmonad-darcs xmonad-contrib-darcs
-pacman --noconfirm -S rxvt-unicode urxvt-url-select
+# ------------------------------------------------------------------------
+#pacman --noconfirm -S xfce4 compiz ccsm
+#yaourt --noconfirm -S xmonad-darcs xmonad-contrib-darcs xmobar-git
+pacman --noconfirm -S xmonad xmonad-contrib
+yaourt --noconfirm -S xmobar-git
+yaourt --noconfirm -S physlock unclutter
+pacman --noconfirm -S rxvt-unicode urxvt-url-select hsetroot
 # TODO: edit xfce to use compiz
 # TODO: xmonad, but deal with video tearing
 
 # fonts
-# TODO: terminus and lettergothic
+# ------------------------------------------------------------------------
+pacman --noconfirm -S terminus-font
+yaourt --noconfirm -S webcore-fonts
+yaourt --noconfirm -S fontforge libspiro
+yaourt --noconfirm -S freetype2-git-infinality
+# TODO: sed infinality and change to OSX or OSX2 mode
+#	and create the sym link from /etc/fonts/conf.avail to conf.d
 
 # misc apps
+# ------------------------------------------------------------------------
+pacman --noconfirm -S htop openssh bash-completion git vim
 pacman --noconfirm -S chromium flashplugin
+pacman --noconfirm -S scrot mypaint
+yaourt --noconfirm -S task-git stellarium googlecl
+# TODO: argyll
 
 POST_EOF
 
 # ------------------------------------------------------------------------
 # Post install in chroot
 # ------------------------------------------------------------------------
-echo "chroot and run /post_install"
-#chroot /install /post_install
-#rm /install/post_install
+#echo "chroot and run /post_install"
+chroot /install /post_install
+rm /install/post_install
 
 
 # ------------------------------------------------------------------------
