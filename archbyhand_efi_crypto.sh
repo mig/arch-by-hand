@@ -461,7 +461,7 @@ yaourt --noconfirm -S xf86-input-wacom-git # NOT NEEDED? input-wacom-git
 # ------------------------------------------------------------------------
 #pacman --noconfirm -S xfce4 compiz ccsm
 #yaourt --noconfirm -S xmonad-darcs xmonad-contrib-darcs xmobar-git
-pacman --noconfirm -S xmonad xmonad-contrib
+pacman --noconfirm -S xmonad xmonad-contrib xcompmgr
 yaourt --noconfirm -S xmobar-git
 yaourt --noconfirm -S physlock unclutter
 pacman --noconfirm -S rxvt-unicode urxvt-url-select hsetroot
