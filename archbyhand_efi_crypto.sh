@@ -450,7 +450,7 @@ pacman --noconfirm -S base-devel mesa mesa-demos
 
 # x
 # ------------------------------------------------------------------------
-pacman --noconfirm -S xorg xorg-utils xdotool xorg-xlsfonts
+pacman --noconfirm -S xorg xorg-xinit xorg-utils xorg-server-utils xdotool xorg-xlsfonts
 yaourt --noconfirm -S xf86-input-wacom-git # NOT NEEDED? input-wacom-git
 #TODO: cut down the install size
 #pacman --noconfirm -S xorg-server xorg-xinit xorg-utils xorg-server-utils
