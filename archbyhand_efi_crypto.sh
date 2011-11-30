@@ -81,8 +81,8 @@ sed -i "s/^#\(${VALUENAME}.*\)$/\1/" "${FILEPATH}"
 # Warn
 # ------------------------------------------------------------------------
 timer=9
-timer=1
-echo -n "This procedure will completely format /dev/sda. Please cancel with ctrl-c to cancel within $timer seconds..."
+echo -e "\n\nMAC WARNING: This script is not designed for APPLE MAC installs and will potentially misconfigure boot to your existing OS X installation. STOP NOW IF YOU ARE ON A MAC.\n\n"
+echo -n "GENERAL WARNING: This procedure will completely format /dev/sda. Please cancel with ctrl-c to cancel within $timer seconds..."
 while [[ $timer -gt 0 ]]
 do
 	sleep 1
@@ -460,13 +460,22 @@ yaourt --noconfirm -S xf86-input-wacom-git # NOT NEEDED? input-wacom-git
 # environment/wm/etc.
 # ------------------------------------------------------------------------
 #pacman --noconfirm -S xfce4 compiz ccsm
-#yaourt --noconfirm -S xmonad-darcs xmonad-contrib-darcs xmobar-git
-pacman --noconfirm -S xmonad xmonad-contrib xcompmgr
-yaourt --noconfirm -S xmobar-git
+
+pacman --noconfirm -S xcompmgr
 yaourt --noconfirm -S physlock unclutter
 pacman --noconfirm -S rxvt-unicode urxvt-url-select hsetroot
+pacman --noconfirm -S gtk2 #gtk3 # for taffybar?
+
+pacman --noconfirm -S ghc
+
+# note: try installing alex and happy from cabal instead
+#pacman --noconfirm -S haskell-platform haskell-hscolour
+#yaourt --noconfirm -S xmonad-darcs xmonad-contrib-darcs xcompmgr
+#yaourt --noconfirm -S xmobar-git
 # TODO: edit xfce to use compiz
 # TODO: xmonad, but deal with video tearing
+# TODO: xmonad-darcs fails to install from AUR. haskell dependency hell.
+# 	switching to cabal
 
 # fonts
 # ------------------------------------------------------------------------
@@ -481,7 +490,7 @@ yaourt --noconfirm -S freetype2-git-infinality
 # ------------------------------------------------------------------------
 pacman --noconfirm -S htop openssh keychain bash-completion git vim
 pacman --noconfirm -S chromium flashplugin
-pacman --noconfirm -S scrot mypaint
+pacman --noconfirm -S scrot mypaint bc
 yaourt --noconfirm -S task-git stellarium googlecl
 # TODO: argyll
 
