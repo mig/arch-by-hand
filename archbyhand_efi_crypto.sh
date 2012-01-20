@@ -27,6 +27,7 @@ USERNAME=es
 # so it makes sense to reuse them and allow an easy, one-time change if we
 # need to alter values such as the install target mount point.
 
+AURHELPER=packer
 INSTALL_TARGET="/install"
 HR="--------------------------------------------------------------------------------"
 PACMAN="pacman --noconfirm --config /tmp/pacman.conf"
@@ -133,9 +134,6 @@ Server = ${FILE_URL}
 Server = ${FTP_URL}
 Server = ${HTTP_URL}
 
-# Uncomment to enable pacman -Sy yaourt
-#[archlinuxfr]
-#Server = http://repo.archlinux.fr/\$arch
 PACMANEOF
 
 # Prepare pacman
@@ -381,26 +379,36 @@ passwd ${USERNAME}
 
 # mirror ranking
 # ------------------------------------------------------------------------
-echo -e "${HR}\\nRanking Mirrors (this will take a while)\\n${HR}"
+#echo -e "${HR}\\nRanking Mirrors (this will take a while)\\n${HR}"
+#cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.orig
+#mv /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.all
+#sed -i "s/#S/S/" /etc/pacman.d/mirrorlist.all
+#rankmirrors -n 5 /etc/pacman.d/mirrorlist.all > /etc/pacman.d/mirrorlist
+
+# mirrors - all (quick and dirty alternate to ranking)
+# ------------------------------------------------------------------------
 cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.orig
-mv /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.all
-sed -i "s/#S/S/" /etc/pacman.d/mirrorlist.all
-rankmirrors -n 5 /etc/pacman.d/mirrorlist.all > /etc/pacman.d/mirrorlist
+sed -i "s/#S/S/" /etc/pacman.d/mirrorlist
 
 # temporary fix for locale.sh update conflict
 # ------------------------------------------------------------------------
 mv /etc/profile.d/locale.sh /etc/profile.d/locale.sh.preupdate || true
 
-# yaourt repo (add to target pacman, not tmp pacman.conf, for ongoing use)
-# ------------------------------------------------------------------------
-echo -e "\\n[archlinuxfr]\\nServer = http://repo.archlinux.fr/\\\$arch" >> /etc/pacman.conf
-echo -e "\\n[haskell]\\nServer = http://www.kiwilight.com/\\\$repo/\\\$arch" >> /etc/pacman.conf
-
 # additional groups and utilities
 # ------------------------------------------------------------------------
 pacman --noconfirm -Syu
 pacman --noconfirm -S base-devel
-pacman --noconfirm -S yaourt
+
+# AUR helper
+# ------------------------------------------------------------------------
+# Note that the AUR helper must support standard pacman syntax
+mkdir -p /tmp/build
+cd /tmp/build
+wget https://aur.archlinux.org/packages/${AURHELPER}/${AURHELPER}.tar.gz
+tar -xzvf ${AURHELPER}.tar.gz
+cd ${AURHELPER}
+makepkg --asroot -si
+cd /tmp
 
 # sudo
 # ------------------------------------------------------------------------
@@ -413,7 +421,7 @@ visudo -qcsf /tmp/sudoers.edit && cat /tmp/sudoers.edit > /etc/sudoers
 # power
 # ------------------------------------------------------------------------
 pacman --noconfirm -S acpi acpid acpitool cpufrequtils
-yaourt --noconfirm -S powertop2
+${AURHELPER} --noconfirm -S powertop2
 sed -i "/^DAEMONS/ s/)/ @acpid)/" /etc/rc.conf
 sed -i "/^MODULES/ s/)/ acpi-cpufreq cpufreq_ondemand cpufreq_powersave coretemp)/" /etc/rc.conf
 # following requires my acpi handler script
@@ -446,43 +454,51 @@ mv /etc/asound.conf /etc/asound.conf.orig || true
 
 # video
 # ------------------------------------------------------------------------
-pacman --noconfirm -S base-devel mesa mesa-demos
+pacman --noconfirm -S base-devel mesa mesa-demos # linux-headers
 
 # x
 # ------------------------------------------------------------------------
-pacman --noconfirm -S xorg xorg-xinit xorg-utils xorg-server-utils xdotool xorg-xlsfonts
-yaourt --noconfirm -S xf86-input-wacom-git # NOT NEEDED? input-wacom-git
-#TODO: cut down the install size
-#pacman --noconfirm -S xorg-server xorg-xinit xorg-utils xorg-server-utils
-
-# TODO: wacom
+pacman --noconfirm -S xorg xorg-server xorg-xinit xorg-utils xorg-server-utils xdotool xorg-xlsfonts
+${AURHELPER} --noconfirm -S xf86-input-wacom-git
 
 # environment/wm/etc.
 # ------------------------------------------------------------------------
 #pacman --noconfirm -S xfce4 compiz ccsm
+pacman --noconfirm -S xcompmgr xscreensaver hsetroot
+pacman --noconfirm -S rxvt-unicode urxvt-url-select
+#${AURHELPER} -S rxvt-unicode-cvs # need to manually edit out patch lines
+pacman --noconfirm -S urxvt-url-select
+pacman --noconfirm -S gtk2
+pacman --noconfirm -S ghc alex happy gtk2hs-buildtools cabal-install
+${AURHELPER} --noconfirm -S physlock
+${AURHELPER} --noconfirm -S unclutter
+pacman --noconfirm -S dbus upower
+sed -i "/^DAEMONS/ s/)/ @dbus)/" /etc/rc.conf
 
-pacman --noconfirm -S xcompmgr
-yaourt --noconfirm -S physlock unclutter
-pacman --noconfirm -S rxvt-unicode urxvt-url-select hsetroot
-pacman --noconfirm -S gtk2 #gtk3 # for taffybar?
-
-pacman --noconfirm -S ghc
-
-# note: try installing alex and happy from cabal instead
-#pacman --noconfirm -S haskell-platform haskell-hscolour
-#yaourt --noconfirm -S xmonad-darcs xmonad-contrib-darcs xcompmgr
-#yaourt --noconfirm -S xmobar-git
-# TODO: edit xfce to use compiz
-# TODO: xmonad, but deal with video tearing
-# TODO: xmonad-darcs fails to install from AUR. haskell dependency hell.
-# 	switching to cabal
+# TODO: another install script for this
+# following as non root user, make sure \$HOME/.cabal/bin is in path
+# make sure to nuke existing .ghc and .cabal directories first
+#su ${USERNAME}
+#cd \$HOME
+#rm -rf \$HOME/.ghc \$HOME/.cabal
+# TODO: consider adding just .cabal to the path as well
+#export PATH=$PATH:\$HOME/.cabal/bin
+#cabal update
+# # NOT USING following line... alex, happy and gtk2hs-buildtools installed via paman
+# # cabal install alex happy xmonad xmonad-contrib gtk2hs-buildtools
+#cabal install xmonad xmonad-contrib taffybar
+#cabal install c2hs language-c x11-xft xmobar --flags "all-extensions"
+pacman --noconfirm -S wireless_tools # don't want it, but xmobar does
+#note that I installed xmobar from github instead
+#exit
 
 # fonts
 # ------------------------------------------------------------------------
 pacman --noconfirm -S terminus-font
-yaourt --noconfirm -S webcore-fonts
-yaourt --noconfirm -S fontforge libspiro
-yaourt --noconfirm -S freetype2-git-infinality
+${AURHELPER} --noconfirm -S webcore-fonts
+${AURHELPER} --noconfirm -S libspiro
+${AURHELPER} --noconfirm -S fontforge
+${AURHELPER} -S freetype2-git-infinality # will prompt for freetype2 replacement
 # TODO: sed infinality and change to OSX or OSX2 mode
 #	and create the sym link from /etc/fonts/conf.avail to conf.d
 
@@ -491,8 +507,27 @@ yaourt --noconfirm -S freetype2-git-infinality
 pacman --noconfirm -S htop openssh keychain bash-completion git vim
 pacman --noconfirm -S chromium flashplugin
 pacman --noconfirm -S scrot mypaint bc
-yaourt --noconfirm -S task-git stellarium googlecl
+${AURHELPER} --noconfirm -S task-git
+${AURHELPER} --noconfirm -S stellarium
+# googlecl discovery requires the svn googlecl version and google-api-python-client and httplib2, gflags
+${AURHELPER} --noconfirm -S googlecl-svn
+${AURHELPER} --noconfirm -S googlecl-svn python2-google-api-python-client python2-httplib2 python2-gflags python-simplejson
+#${AURHELPER} --noconfirm -S google-talkplugin
+${AURHELPER} --noconfirm -S argyll dispcalgui
 # TODO: argyll
+
+# extras
+# ------------------------------------------------------------------------
+
+${AURHELPER} -S --noconfirm haskell-mtl haskell-hscolour haskell-x11
+${AURHELPER} -S --noconfirm xmonad-darcs xmonad-contrib-darcs xmobar-git
+${AURHELPER} -S --noconfirm trayer-srg-git
+#skype
+pacman -S --noconfirm zip # for pent buftabs
+#${AURHELPER} -S --noconfirm aurora
+#${AURHELPER} -S --noconfirm aurora-pentadactyl-buftabs-git
+#${AURHELPER} -S --noconfirm terminus-font-ttf
+mkdir -p /home/${USERNAME}/.pentadactyl/plugins && ln -sf /usr/share/aurora-pentadactyl-buftabs/buftabs.js /home/${USERNAME}/.pentadactyl/plugins/buftabs.js
 
 POST_EOF
 
@@ -501,8 +536,7 @@ POST_EOF
 # ------------------------------------------------------------------------
 #echo "chroot and run /post_install"
 chroot /install /post_install
-rm /install/post_install
-
+mv /install/post_install /.
 
 # ------------------------------------------------------------------------
 # NOTES/TODO
