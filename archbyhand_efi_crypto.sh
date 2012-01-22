@@ -17,8 +17,8 @@ set -o nounset
 # this whole script needs to be customized, particularly disk partitions
 # and configuration, but this section contains global variables that
 # are used during the system configuration phase for convenience
-HOSTNAME=tau
-USERNAME=es
+HOSTNAME=siva
+USERNAME=mig
 
 # ------------------------------------------------------------------------
 # Globals
@@ -88,7 +88,7 @@ while [[ $timer -gt 0 ]]
 do
 	sleep 1
 	let timer-=1
-	echo -en "$timer seconds..."
+	echo -en "$timer seconds..."
 done
 
 echo "STARTING"
@@ -345,7 +345,7 @@ EFI_EOF
 # Install EFI using script inside chroot
 # ------------------------------------------------------------------------
 chroot ${INSTALL_TARGET} /install_efi
-rm ${INSTALL_TARGET}/install_efi
+# rm ${INSTALL_TARGET}/install_efi
 
 # ------------------------------------------------------------------------
 # Post install steps
@@ -536,7 +536,7 @@ POST_EOF
 # ------------------------------------------------------------------------
 #echo "chroot and run /post_install"
 chroot /install /post_install
-mv /install/post_install /.
+# mv /install/post_install /.
 
 # ------------------------------------------------------------------------
 # NOTES/TODO
